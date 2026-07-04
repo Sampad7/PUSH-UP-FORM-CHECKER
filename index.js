@@ -1,5 +1,6 @@
 import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
+console.log('index.js loaded');
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -136,6 +137,7 @@ function setBannerLoading(){
 async function loadVideoFile(file){
   errorMsg.style.display = 'none';
   if(!file) return;
+  console.log('Selected video file:', file.name, file.type, file.size);
   if(!file.type.startsWith('video/')){
     errorMsg.style.display = 'block';
     errorMsg.textContent = 'That doesn\'t look like a video file. Please choose a video (mp4, mov, webm...).';
@@ -147,6 +149,8 @@ async function loadVideoFile(file){
     summaryCard.classList.remove('show');
     const url = URL.createObjectURL(file);
     video.src = url;
+    video.preload = 'auto';
+    video.load();
     video.controls = false;
     video.muted = false;
     video.loop = false;
@@ -154,10 +158,14 @@ async function loadVideoFile(file){
     if(!poseLandmarker){
       setBannerLoading();
       await initLandmarker();
+      console.log('PoseLandmarker initialized');
     }
 
     await new Promise((resolve,reject)=>{
-      video.onloadedmetadata = resolve;
+      video.onloadeddata = () => {
+        console.log('Video frame data loaded', video.videoWidth, video.videoHeight);
+        resolve();
+      };
       video.onerror = () => reject(new Error('Could not read this video file.'));
     });
 
@@ -165,9 +173,14 @@ async function loadVideoFile(file){
     canvas.height = video.videoHeight;
 
     running = true;
-    setBanner('Video loaded — press play', null);
-    await video.play();
     requestAnimationFrame(loop);
+    setBanner('Video loaded — press play', null);
+    video.controls = true;
+    video.muted = true;
+    video.play().catch(playErr => {
+      console.warn('Video play blocked:', playErr);
+      setBanner('Playback blocked — click play to continue', 'warn');
+    });
   }catch(err){
     console.error(err);
     errorMsg.style.display = 'block';
@@ -185,6 +198,11 @@ video.addEventListener('play', ()=>{
     running = true;
     requestAnimationFrame(loop);
   }
+});
+
+video.addEventListener('error', (event)=>{
+  console.error('Video element error:', event);
+  setBanner('Video failed to load/play. Try a different file.', 'bad');
 });
 
 video.addEventListener('ended', ()=>{
@@ -217,6 +235,7 @@ function loop(){
   if(video.currentTime !== lastTime){
     lastTime = video.currentTime;
     const result = poseLandmarker.detectForVideo(video, now);
+    console.log('Frame analyzed', { time: video.currentTime, landmarks: result.landmarks?.length });
     processResult(result);
   }
   requestAnimationFrame(loop);
